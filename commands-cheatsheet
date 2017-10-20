@@ -1,0 +1,25 @@
+LIST OF GNU/LINUX COMMANDS
+==========================
+
+KERNEL
+======
+
+NETWORKING
+==========
+
+SECURITY
+========
+# Verify ps is reporting everything and has not been compromised.
+# rootkit will often install their own ps command which hides
+# kernel modules. If second output is larger than the first (ps ax)
+# command output take a closer look at your server.
+ps ax |wc -1
+ls -d /proc/* | grep [0-9]|wc -l
+
+STORAGE / DISK
+==============
+
+VIM EDITOR
+==========
+# Remove everything from cursor position to end of file
+:.,$d
