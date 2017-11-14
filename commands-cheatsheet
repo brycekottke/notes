@@ -6,6 +6,18 @@ KERNEL
 
 NETWORKING
 ==========
+# Wireless | scan for wifi in range
+sudo iwlist wlan0 scan |grep -E "ESSID|Quality|Group Cipher|Pairwise Ciphers"
+
+# Wireless | generate wpa_supplicant config file
+wpa_passphrase mywifi > wpa.conf
+
+# Wireless | connect to wireless access point
+sudo wpa_supplicant -B -i wlan0 -c /etc/wpa_supplicant/wpa.conf
+
+# Wireless | release / renew dhcp lease
+sudo dhclient -r
+sudo dhclient wlan0
 
 SECURITY
 ========
@@ -13,11 +25,19 @@ SECURITY
 # rootkit will often install their own ps command which hides
 # kernel modules. If second output is larger than the first (ps ax)
 # command output take a closer look at your server.
-ps ax |wc -1
+ps ax |wc -l
 ls -d /proc/* | grep [0-9]|wc -l
+
+# Verify ssh fingerprint upon first ssh connection
+cd /etc/ssh/ && for file in *.pub; do ssh-keygen -lf $file; done
 
 STORAGE / DISK
 ==============
+
+MISCELLANEOUS
+=============
+# Adjust brightness on laptop
+echo 2700 |sudo tee /sys/class/backlight/intel_backlight/brightness
 
 VIM EDITOR
 ==========
