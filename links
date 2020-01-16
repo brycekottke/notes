@@ -1,3 +1,6 @@
 
 # Scripting / Programming cheatsheets
 https://devhints.io/bash
+
+# Gnupg, keyservers and gpg encryption
+https://riseup.net/en/security/message-security/openpgp/best-practices#selecting-a-keyserver-and-configuring-your-machine-to-refresh-your-keyring
